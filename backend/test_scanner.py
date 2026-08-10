@@ -11,7 +11,7 @@ def get_user(user_id):
 """
 
 # Scan ဖတ်ခြင်း
-results = scan_code_string(vulnerable_code, file_path="test_script.py")
+results = scan_code_string(vulnerable_code)
 
 # ရလဒ် ထုတ်ပြခြင်း
 print("--- Scan Results ---")
