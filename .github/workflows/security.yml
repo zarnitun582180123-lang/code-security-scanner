@@ -30,4 +30,5 @@ jobs:
       # 4. မိမိတို့ ရေးသားထားသော Code Security Scanner ကို စတင် Run ခြင်း
       - name: Run SecureCode Security Audit
         run: |
-          python main.py
+          cd backend
+          python app.py
