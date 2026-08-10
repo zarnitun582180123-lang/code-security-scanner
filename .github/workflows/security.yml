@@ -2,19 +2,32 @@ name: DevSecOps Automated Security Scan
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
 
 jobs:
   security-audit:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. GitHub Repo ထဲက Code တွေကို Runner ပေါ်သို့ ရယူခြင်း
       - name: Checkout Source Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
+      # 2. Python Environment ပြင်ဆင်ခြင်း
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # 3. Project အတွက် လိုအပ်သော Packages/Dependencies များ Install လုပ်ခြင်း
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # 4. မိမိတို့ ရေးသားထားသော Code Security Scanner ကို စတင် Run ခြင်း
       - name: Run SecureCode Security Audit
         run: |
-          echo "🔍 Running Automated Static Application Security Testing (SAST)..."
-          echo "✅ Security Check Completed Successfully!"
+          python app.py
