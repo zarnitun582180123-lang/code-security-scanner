@@ -1,40 +1,41 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
-
-Base = declarative_base()
+from app.database import Base
 
 class Repository(Base):
     __tablename__ = "repositories"
 
     id = Column(Integer, primary_key=True, index=True)
-    repo_name = Column(String(100), nullable=False)
-    repo_url = Column(String(255), nullable=False)
+    repo_name = Column(String, index=True)
+    repo_url = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    scans = relationship("Scan", back_populates="repository")
+    scans = relationship("Scan", back_populates="repository", cascade="all, delete-orphan")
+
 
 class Scan(Base):
     __tablename__ = "scans"
 
     id = Column(Integer, primary_key=True, index=True)
     repo_id = Column(Integer, ForeignKey("repositories.id"))
-    status = Column(String(20), default="PENDING")  # PENDING, IN_PROGRESS, COMPLETED
+    scan_date = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, default="PENDING")
     total_issues = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
     repository = relationship("Repository", back_populates="scans")
-    vulnerabilities = relationship("Vulnerability", back_populates="scan")
+    vulnerabilities = relationship("Vulnerability", back_populates="scan", cascade="all, delete-orphan")
+
 
 class Vulnerability(Base):
     __tablename__ = "vulnerabilities"
 
     id = Column(Integer, primary_key=True, index=True)
     scan_id = Column(Integer, ForeignKey("scans.id"))
-    severity = Column(String(10), nullable=False)  # CRITICAL, HIGH, MEDIUM, LOW
-    vulnerability_type = Column(String(50), nullable=False)
-    file_path = Column(String(255), nullable=False)
-    line_number = Column(Integer, nullable=False)
-    suggestion = Column(Text, nullable=True)
+    severity = Column(String)
+    vulnerability_type = Column(String)
+    file_path = Column(String)
+    line_number = Column(Integer)
+    suggestion = Column(String)
 
     scan = relationship("Scan", back_populates="vulnerabilities")
