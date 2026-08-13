@@ -21,7 +21,9 @@ from app.models import Base, Repository, Scan, Vulnerability
 from app.scanner.ast_engine import scan_code_string, scan_directory
 from app.tasks import run_async_scan
 from app.celery_app import celery_app
+from dotenv import load_dotenv
 
+load_dotenv()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Automated Code Security Scanner API")
@@ -33,8 +35,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
 
 try:
     groq_client = Groq(api_key=GROQ_API_KEY) if "gsk_" in GROQ_API_KEY else None

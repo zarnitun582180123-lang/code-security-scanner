@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.db
+sql_app.db
+app.db
+scan_results.db
