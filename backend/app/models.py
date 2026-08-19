@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
+
 
 class Repository(Base):
     __tablename__ = "repositories"
@@ -37,5 +38,9 @@ class Vulnerability(Base):
     file_path = Column(String)
     line_number = Column(Integer)
     suggestion = Column(String)
+
+    # 🆕 တကယ့် Code Snippet များကို သိမ်းဆည်းရန် Column အသစ်များ ထည့်သွင်းထားပါသည်
+    vulnerable_code = Column(Text, nullable=True)
+    secure_code = Column(Text, nullable=True)
 
     scan = relationship("Scan", back_populates="vulnerabilities")
