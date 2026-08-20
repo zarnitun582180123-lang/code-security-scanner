@@ -74,7 +74,119 @@ SECURITY_PATTERNS = [
         "regex": r"http://[a-zA-Z0-9\.\-]+",
         "suggestion": "မလုံခြုံသော Plain HTTP Protocol ကို သုံးထားပါသည်။ Encrypted HTTPS ချိတ်ဆက်မှုကိုသာ အသုံးပြုပါ။",
         "secure_code_template": "https://your-secure-domain.com"
-    }
+    },
+    {
+        "id": "PYTHON_SQL_INJECTION",
+        "type": "PYTHON_SQL_INJECTION_RISK",
+        "severity": "CRITICAL",
+        "regex": r"(?i)(execute|executemany)\s*\(\s*(f[\"']|[\"'].*\+|[\"'].*%|[\"'].*\.format\s*\()",
+        "suggestion": "SQL Query ထဲသို့ User Input ကို String Concatenation/F-string ဖြင့် တိုက်ရိုက်ထည့်ခြင်းသည် SQL Injection ဖြစ်စေနိုင်ပါသည်။ Parameterized Queries ကို အသုံးပြုပါ။",
+        "secure_code_template": "cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))"
+    },
+    {
+        "id": "JS_SQL_INJECTION",
+        "type": "JAVASCRIPT_SQL_INJECTION_RISK",
+        "severity": "CRITICAL",
+        "regex": r"(?i)(query|execute|exec)\s*\(\s*[`\"'].*(\$\{|req\.(query|params|body)|\+)",
+        "suggestion": "JavaScript/TypeScript SQL Query ထဲသို့ User Input ကို တိုက်ရိုက်ထည့်ထားပါသည်။ Parameterized Queries ကို အသုံးပြုပါ။",
+        "secure_code_template": "db.query('SELECT * FROM users WHERE id = ?', [userId])"
+    },
+    {
+        "id": "NODE_COMMAND_INJECTION",
+        "type": "NODE_COMMAND_INJECTION_RISK",
+        "severity": "CRITICAL",
+        "regex": r"(?i)(child_process\.(exec|execSync|spawn|spawnSync)|exec\s*\(|execSync\s*\(|spawn\s*\()\s*\(",
+        "suggestion": "Node.js child_process functions များကို User Input နှင့် တွဲသုံးပါက Command Injection ဖြစ်နိုင်ပါသည်။ Fixed command နှင့် safe argument handling ကို အသုံးပြုပါ။",
+        "secure_code_template": "spawn('command', ['safe-argument'], { shell: false })"
+    },
+    {
+        "id": "PATH_TRAVERSAL",
+        "type": "PATH_TRAVERSAL_RISK",
+        "severity": "HIGH",
+        "regex": r"(?i)(open|readFile|readFileSync|writeFile|writeFileSync|unlink|unlinkSync)\s*\([^)]*(\.\./|\.\.\\\\|req\.(query|params|body)|request\.(args|form))",
+        "suggestion": "User-controlled file path ကို တိုက်ရိုက်အသုံးပြုထားနိုင်ပါသည်။ Path ကို validate လုပ်ပြီး allowed directory အတွင်းတွင်သာ access ပြုလုပ်ပါ။",
+        "secure_code_template": "from pathlib import Path\nsafe_path = (BASE_DIR / user_filename).resolve()\nsafe_path.relative_to(BASE_DIR)"
+    },
+    {
+        "id": "WEAK_MD5",
+        "type": "WEAK_HASH_MD5",
+        "severity": "MEDIUM",
+        "regex": r"(?i)(hashlib\.md5\s*\(|md5\s*\()",
+        "suggestion": "MD5 သည် cryptographic security အတွက် မသင့်တော်တော့ပါ။ SHA-256 သို့မဟုတ် သင့်တော်သော password hashing algorithm ကို အသုံးပြုပါ။",
+        "secure_code_template": "hashlib.sha256(data).hexdigest()"
+    },
+    {
+        "id": "WEAK_SHA1",
+        "type": "WEAK_HASH_SHA1",
+        "severity": "MEDIUM",
+        "regex": r"(?i)(hashlib\.sha1\s*\(|sha1\s*\()",
+        "suggestion": "SHA-1 သည် cryptographic security အတွက် မသင့်တော်တော့ပါ။ SHA-256 သို့မဟုတ် ပိုမိုခိုင်မာသော algorithm ကို အသုံးပြုပါ။",
+        "secure_code_template": "hashlib.sha256(data).hexdigest()"
+    },
+    {
+        "id": "SSRF_REQUEST",
+        "type": "SSRF_RISK",
+        "severity": "HIGH",
+        "regex": r"(?i)(requests\.(get|post|put|delete|request)|urllib\.request\.urlopen|httpx\.(get|post|request)|axios\.(get|post|request))\s*\([^)]*(req\.(query|params|body)|request\.(args|form)|user[_\-]?input|url)",
+        "suggestion": "User-controlled URL ကို Server-side HTTP Request အဖြစ် တိုက်ရိုက်အသုံးပြုထားနိုင်ပါသည်။ URL ကို allowlist ဖြင့် validate လုပ်ပြီး internal/private network access ကို ပိတ်ထားပါ။",
+        "secure_code_template": "ALLOWED_HOSTS = {'api.example.com'}\n# Validate the requested URL against an allowlist before making the request."
+    },
+    {
+        "id": "DOM_XSS_INNERHTML",
+        "type": "DOM_XSS_INNERHTML",
+        "severity": "HIGH",
+        "regex": r"(?i)(\.innerHTML\s*=|\.outerHTML\s*=|insertAdjacentHTML\s*\(|document\.write\s*\()",
+        "suggestion": "Untrusted content ကို DOM HTML အဖြစ် တိုက်ရိုက်ထည့်ထားပါသည်။ XSS ဖြစ်နိုင်သောကြောင့် textContent သို့မဟုတ် trusted HTML sanitization ကို အသုံးပြုပါ။",
+        "secure_code_template": "element.textContent = userInput"
+    },
+    {
+        "id": "PYTHON_PICKLE",
+        "type": "INSECURE_DESERIALIZATION_PICKLE",
+        "severity": "CRITICAL",
+        "regex": r"(?i)(pickle\.loads?\s*\(|dill\.loads?\s*\()",
+        "suggestion": "Untrusted data ကို pickle/dill ဖြင့် deserialize လုပ်ခြင်းသည် arbitrary code execution ဖြစ်စေနိုင်ပါသည်။ JSON ကဲ့သို့ safe serialization format ကို အသုံးပြုပါ။",
+        "secure_code_template": "import json\ndata = json.loads(untrusted_data)"
+    },
+    {
+        "id": "PYTHON_YAML_LOAD",
+        "type": "INSECURE_YAML_DESERIALIZATION",
+        "severity": "HIGH",
+        "regex": r"(?i)yaml\.load\s*\(",
+        "suggestion": "Untrusted YAML ကို yaml.load() ဖြင့် deserialize လုပ်ခြင်းသည် အန္တရာယ်ရှိနိုင်ပါသည်။ yaml.safe_load() ကို အသုံးပြုပါ။",
+        "secure_code_template": "data = yaml.safe_load(untrusted_yaml)"
+    },
+    {
+        "id": "WEAK_DES",
+        "type": "WEAK_CRYPTO_DES",
+        "severity": "HIGH",
+        "regex": r"(?i)(\bDES\s*\(|\bDES3\s*\(|\bDES\.new\s*\(|\bDES3\.new\s*\(|Crypto\.Cipher\.DES|cryptography.*TripleDES)",
+        "suggestion": "DES/3DES သည် modern security requirements အတွက် မသင့်တော်တော့ပါ။ AES-GCM ကဲ့သို့ modern authenticated encryption ကို အသုံးပြုပါ။",
+        "secure_code_template": "from cryptography.hazmat.primitives.ciphers.aead import AESGCM"
+    },
+    {
+        "id": "WEAK_RC4",
+        "type": "WEAK_CRYPTO_RC4",
+        "severity": "HIGH",
+        "regex": r"(?i)(\bARC4\s*\(|\bRC4\s*\(|\bARC4\.new\s*\(|\bRC4\.new\s*\(|Crypto\.Cipher\.ARC4)",
+        "suggestion": "RC4 သည် cryptographically broken ဖြစ်သောကြောင့် မသုံးသင့်ပါ။ Modern authenticated encryption algorithm ကို အသုံးပြုပါ။",
+        "secure_code_template": "Use AES-GCM or ChaCha20-Poly1305 instead of RC4."
+    },
+    {
+        "id": "GITHUB_TOKEN",
+        "type": "HARDCODED_GITHUB_TOKEN",
+        "severity": "CRITICAL",
+        "regex": r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b",
+        "suggestion": "GitHub Access Token ကို Source Code ထဲတွင် hardcode မလုပ်ပါနှင့်။ Environment Variables သို့မဟုတ် Secret Manager ကို အသုံးပြုပါ။",
+        "secure_code_template": "import os\nGITHUB_TOKEN = os.getenv('GITHUB_TOKEN')"
+    },
+    {
+        "id": "JWT_SECRET",
+        "type": "HARDCODED_JWT_SECRET",
+        "severity": "HIGH",
+        "regex": r"(?i)(jwt[_\-]?secret|jwt[_\-]?key)\s*[:=]\s*['\"][A-Za-z0-9_\-]{12,}['\"]",
+        "suggestion": "JWT signing secret ကို Source Code ထဲတွင် hardcode မလုပ်ပါနှင့်။ Environment Variable သို့မဟုတ် Secret Manager ကို အသုံးပြုပါ။",
+        "secure_code_template": "import os\nJWT_SECRET = os.environ['JWT_SECRET']"
+    },
 ]
 
 

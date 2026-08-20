@@ -12,7 +12,11 @@ class Repository(Base):
     repo_url = Column(String, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    scans = relationship("Scan", back_populates="repository", cascade="all, delete-orphan")
+    scans = relationship(
+        "Scan",
+        back_populates="repository",
+        cascade="all, delete-orphan"
+    )
 
 
 class Scan(Base):
@@ -24,8 +28,23 @@ class Scan(Base):
     status = Column(String, default="PENDING")
     total_issues = Column(Integer, default=0)
 
-    repository = relationship("Repository", back_populates="scans")
-    vulnerabilities = relationship("Vulnerability", back_populates="scan", cascade="all, delete-orphan")
+    repository = relationship(
+        "Repository",
+        back_populates="scans"
+    )
+
+    vulnerabilities = relationship(
+        "Vulnerability",
+        back_populates="scan",
+        cascade="all, delete-orphan"
+    )
+
+    ai_chat_messages = relationship(
+        "AIChatMessage",
+        back_populates="scan",
+        cascade="all, delete-orphan",
+        order_by="AIChatMessage.created_at"
+    )
 
 
 class Vulnerability(Base):
@@ -39,8 +58,42 @@ class Vulnerability(Base):
     line_number = Column(Integer)
     suggestion = Column(String)
 
-    # 🆕 တကယ့် Code Snippet များကို သိမ်းဆည်းရန် Column အသစ်များ ထည့်သွင်းထားပါသည်
     vulnerable_code = Column(Text, nullable=True)
     secure_code = Column(Text, nullable=True)
 
-    scan = relationship("Scan", back_populates="vulnerabilities")
+    scan = relationship(
+        "Scan",
+        back_populates="vulnerabilities"
+    )
+
+
+class AIChatMessage(Base):
+    __tablename__ = "ai_chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    scan_id = Column(
+        Integer,
+        ForeignKey("scans.id"),
+        nullable=False
+    )
+
+    role = Column(
+        String,
+        nullable=False
+    )
+
+    content = Column(
+        Text,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    scan = relationship(
+        "Scan",
+        back_populates="ai_chat_messages"
+    )

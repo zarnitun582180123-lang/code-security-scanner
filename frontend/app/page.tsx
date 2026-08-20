@@ -1,10 +1,27 @@
 'use client';
 
+import ThreatAnalysisIntro from "./components/ThreatAnalysisIntro";
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import AIAgent from './components/AIAgent';
+
 import {
-  ShieldAlert, GitBranch, Code2, History, Moon, Zap,
-  ShieldCheck, Activity, Cpu, Server, Lock, FileSearch
+  ShieldAlert,
+  GitBranch,
+  Code2,
+  History,
+  Moon,
+  Zap,
+  ShieldCheck,
+  Activity,
+  Cpu,
+  Server,
+  Lock,
+  FileSearch,
+  Target,
+  Globe,
+  Shield,
+  Bot
 } from 'lucide-react';
 
 import { ScanResult, HistoryLog } from './types';
@@ -13,8 +30,15 @@ import QuickCodeCheck from './components/QuickCodeCheck';
 import ScanHistory from './components/ScanHistory';
 import ScanResultView from './components/ScanResultView';
 
+import MetricsView from './components/MetricsView';
+import URLScan from './components/URLScan';
+import WebSecurityScan from './components/WebSecurityScan';
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'git' | 'code' | 'history' | 'result'>('git');
+    const [showIntro, setShowIntro] = useState(true);
+ const [activeTab, setActiveTab] = useState<
+  'git' | 'code' | 'history' | 'result' | 'metrics' | 'url' | 'web-scan' | 'ai-agent'
+>('git');
   const [themeMode, setThemeMode] = useState<'default' | 'matrix'>('default');
 
   const [repoName, setRepoName] = useState('');
@@ -31,7 +55,7 @@ export default function Home() {
   // DB ထဲမှ History များကို ဆွဲထုတ်ပေးမည့် Function
   const fetchHistoryLogs = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/scan/history');
+      const response = await axios.get('http://127.0.0.1:8000/scan/history')
       setHistoryLogs(response.data);
     } catch (err) {
       console.error('History logs fetch ရာတွင် အမှားဖြစ်နေပါသည်:', err);
@@ -64,31 +88,74 @@ export default function Home() {
   };
 
   const handleSnippetScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!codeSnippet.trim()) return alert('Scan ဖတ်ချင်သည့် Code များကို ထည့်ပေးပါ');
-    setLoading(true); setError(''); setScanResult(null);
-    try {
-      const response = await axios.post('http://localhost:8000/scan/snippet', {
-        code_string: codeSnippet
-      });
-      const resultObj: ScanResult = {
-        scan_id: response.data.scan_id,
-        repo_name: 'Direct Code Snippet Audit',
-        total_issues: response.data.total_issues,
-        vulnerabilities: response.data.vulnerabilities
-      };
-      setScanResult(resultObj);
-      await fetchHistoryLogs(); // Scan ပြီးပါက History ကို update လုပ်မည်
-      setActiveTab('result');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Snippet Scan ဖတ်ရာတွင် အမှားယွင်းရှိနေပါသည်');
-    } finally {
-      setLoading(false);
-    }
-  };
+  e.preventDefault();
 
-  return (
-    /* 🔴 ပထမပုံလို font-mono နဲ့ tracking-wider ကို နှစ်ခုလုံးတူအောင် Outer Div မှာ Fixed ထားပေးထားပါတယ် */
+  console.log('🔥 1. handleSnippetScan CALLED');
+  console.log('🔥 2. codeSnippet:', codeSnippet);
+
+  if (!codeSnippet.trim()) {
+    alert('Scan ဖတ်ချင်သည့် Code များကို ထည့်ပေးပါ');
+    return;
+  }
+
+  setLoading(true);
+  setError('');
+  setScanResult(null);
+
+  try {
+    console.log('🔥 3. Sending POST /scan/snippet...');
+
+    const response = await axios.post(
+      'http://localhost:8000/scan/snippet',
+      {
+        code_string: codeSnippet
+      }
+    );
+
+
+    console.log('🔥 4. BACKEND RESPONSE:', response.data);
+console.log('🔥 4. VULNERABILITIES:', response.data.vulnerabilities);
+
+    const resultObj: ScanResult = {
+      scan_id: response.data.scan_id,
+      repo_name: 'Direct Code Snippet Audit',
+      total_issues: response.data.total_issues,
+      vulnerabilities: response.data.vulnerabilities
+    };
+
+    console.log('🔥 5. RESULT OBJECT:', resultObj);
+
+    setScanResult(resultObj);
+
+    console.log('🔥 6. setScanResult DONE');
+
+    await fetchHistoryLogs();
+
+    console.log('🔥 7. HISTORY DONE');
+
+    setActiveTab('result');
+
+    console.log('🔥 8. ACTIVE TAB → RESULT');
+  } catch (err: any) {
+    console.error('❌ SNIPPET SCAN ERROR:', err);
+
+    setError(
+      err.response?.data?.detail ||
+      'Snippet Scan ဖတ်ရာတွင် အမှားယွင်းရှိနေပါသည်'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
+ return (
+  <>
+    {showIntro && (
+      <ThreatAnalysisIntro
+        onComplete={() => setShowIntro(false)}
+      />
+    )}
+
     <div className={`min-h-screen relative overflow-hidden font-mono tracking-wider transition-all duration-500 ${
       themeMode === 'matrix'
         ? 'bg-black text-emerald-400 selection:bg-emerald-500 selection:text-black'
@@ -111,7 +178,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-6 py-3.5 flex items-center justify-between">
 
           {/* Logo & Title */}
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('git')}>
+          <div className="flex items-center gap-3 mr-6 cursor-pointer" onClick={() => setActiveTab('git')}>
             <div className={`p-2 rounded-xl border transition-all duration-500 ${
               themeMode === 'matrix'
                 ? 'bg-emerald-950 border-emerald-500 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.4)]'
@@ -120,13 +187,13 @@ export default function Home() {
               <ShieldAlert size={22} className="animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-3 mr-6">
                 <h1 className={`text-base font-bold tracking-wider ${
                   themeMode === 'matrix'
                     ? 'text-emerald-400'
                     : 'bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-cyan-400'
                 }`}>
-                  SecureCode <span className={themeMode === 'matrix' ? 'text-emerald-300' : 'text-cyan-400 font-extrabold'}>SAST</span>
+                  ISVS <span className={themeMode === 'matrix' ? 'text-emerald-300' : 'text-cyan-400 font-extrabold'}></span>
                 </h1>
                 <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold ${
                   themeMode === 'matrix'
@@ -140,12 +207,12 @@ export default function Home() {
           </div>
 
           {/* Integrated Navigation Pills */}
-          <nav className={`flex items-center p-1 rounded-xl border backdrop-blur-md transition-all duration-500 ${
+          <nav className={`flex items-center gap-1.5 p-1.5 rounded-xl border backdrop-blur-md transition-all duration-500 ${
             themeMode === 'matrix' ? 'bg-zinc-950 border-emerald-800' : 'bg-slate-900/90 border-slate-800'
           }`}>
             <button
               onClick={() => { setActiveTab('git'); setError(''); }}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+              className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
                 activeTab === 'git'
                   ? themeMode === 'matrix'
                     ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
@@ -161,7 +228,7 @@ export default function Home() {
 
             <button
               onClick={() => { setActiveTab('code'); setError(''); }}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+              className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
                 activeTab === 'code'
                   ? themeMode === 'matrix'
                     ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
@@ -175,9 +242,43 @@ export default function Home() {
               <span>Quick Check</span>
             </button>
 
+            {/* 🌐 Data Science URL Lexical Feature Extraction Tab */}
+            <button
+              onClick={() => { setActiveTab('url'); setError(''); }}
+              className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+                activeTab === 'url'
+                  ? themeMode === 'matrix'
+                    ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                    : 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-500/20'
+                  : themeMode === 'matrix'
+                    ? 'text-emerald-600 hover:text-emerald-300 hover:bg-emerald-950/60'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+              }`}
+            >
+              <Globe size={15} />
+              <span>URL Feature Scan</span>
+            </button>
+
+            {/* 🛡️ Web Vulnerability & Header Security Audit Tab Button အသစ် */}
+            <button
+              onClick={() => { setActiveTab('web-scan'); setError(''); }}
+              className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+                activeTab === 'web-scan'
+                  ? themeMode === 'matrix'
+                    ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                    : 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-500/20'
+                  : themeMode === 'matrix'
+                    ? 'text-emerald-600 hover:text-emerald-300 hover:bg-emerald-950/60'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+              }`}
+            >
+              <Shield size={15} />
+              <span>Web Audit</span>
+            </button>
+
             <button
               onClick={() => { setActiveTab('history'); setError(''); }}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+              className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
                 activeTab === 'history'
                   ? themeMode === 'matrix'
                     ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
@@ -190,11 +291,46 @@ export default function Home() {
               <History size={15} />
               <span>Scan History</span>
             </button>
+            <button
+  onClick={() => {
+    setActiveTab('ai-agent');
+    setError('');
+  }}
+  className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+    activeTab === 'ai-agent'
+      ? themeMode === 'matrix'
+        ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+        : 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-500/20'
+      : themeMode === 'matrix'
+        ? 'text-emerald-600 hover:text-emerald-300 hover:bg-emerald-950/60'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+  }`}
+>
+  <Bot size={15} />
+  <span>AI Agent</span>
+</button>
+
+            {/* 🟢 Metrics & Benchmarks Tab Button */}
+            <button
+              onClick={() => { setActiveTab('metrics'); setError(''); }}
+              className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+                activeTab === 'metrics'
+                  ? themeMode === 'matrix'
+                    ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                    : 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-500/20'
+                  : themeMode === 'matrix'
+                    ? 'text-emerald-600 hover:text-emerald-300 hover:bg-emerald-950/60'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+              }`}
+            >
+              <Target size={15} />
+              <span>Metrics & Benchmarks</span>
+            </button>
 
             {scanResult && (
               <button
                 onClick={() => { setActiveTab('result'); setError(''); }}
-                className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+                className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
                   activeTab === 'result'
                     ? themeMode === 'matrix'
                       ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
@@ -227,7 +363,27 @@ export default function Home() {
 
       {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-6 py-8 relative z-10">
-        {activeTab !== 'result' ? (
+
+  {activeTab === 'metrics' ? (
+
+    <MetricsView />
+
+  ) : activeTab === 'url' ? (
+
+    <URLScan />
+
+  ) : activeTab === 'web-scan' ? (
+
+    <WebSecurityScan themeMode={themeMode} />
+
+  ) : activeTab === 'ai-agent' ? (
+
+    <AIAgent
+      themeMode={themeMode}
+      scanResult={scanResult}
+    />
+
+  ) : activeTab !== 'result' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
             {/* Left Engine Status Panel */}
@@ -351,7 +507,8 @@ export default function Home() {
             />
           )
         )}
-      </main>
+            </main>
     </div>
+  </>
   );
 }

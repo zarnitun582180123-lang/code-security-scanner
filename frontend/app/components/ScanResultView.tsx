@@ -4,10 +4,24 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import {
   ArrowLeft, FileJson, FileSpreadsheet, Search, Check, X, Copy, Bot, Sparkles,
-  ShieldCheck, AlertOctagon, Terminal, FileCode2, Activity
+  ShieldCheck, AlertOctagon, Terminal, FileCode2, Activity, Cpu, AlertTriangle
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { ScanResult, Vulnerability, AICoachResponse } from '../types';
+import { ScanResult, Vulnerability } from '../types';
+
+import RiskProjectionModal from './RiskProjectionModal';
+import { TrendingDown } from 'lucide-react';
+
+interface DynamicAICoachResponse {
+  cvss_score?: number;
+  cvss_severity?: string;
+  mitre_id?: string;
+  mitre_name?: string;
+  why_dangerous: string;
+  risk_analysis?: string;
+  verification_step?: string;
+  recommendation: string;
+}
 
 interface ScanResultViewProps {
   themeMode: 'default' | 'matrix';
@@ -22,12 +36,13 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
 
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiResponse, setAiResponse] = useState<AICoachResponse | null>(null);
-  const [selectedVulnForAi, setSelectedVulnForAi] = useState<Vulnerability | null>(null);
+  const [aiResponse, setAiResponse] = useState<DynamicAICoachResponse | null>(null);
 
-  const [activeModalTab, setActiveModalTab] = useState<'risk' | 'poc' | 'mitre'>('risk');
-  const [payloadCopied, setPayloadCopied] = useState(false);
+  const [activeModalTab, setActiveModalTab] = useState<'risk' | 'verify' | 'mitre'>('risk');
+  const [verifyCopied, setVerifyCopied] = useState(false);
   const [fixSnippetCopied, setFixSnippetCopied] = useState(false);
+
+  const [isRiskModalOpen, setIsRiskModalOpen] = useState(false);
 
   const COLORS = {
     CRITICAL: '#f43f5e',
@@ -53,6 +68,7 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
       else if (sev === 'MEDIUM') penalty += 5;
       else if (sev === 'LOW') penalty += 2;
     });
+
     const score = Math.max(0, 100 - penalty);
     if (score === 100) return { score, grade: 'A+', label: 'PERFECT SECURITY', color: 'border-emerald-500/50 text-emerald-400 bg-emerald-950/30 shadow-[0_0_25px_rgba(16,185,129,0.2)]' };
     if (score >= 85) return { score, grade: 'A', label: 'EXCELLENT', color: 'border-green-500/50 text-green-400 bg-green-950/30 shadow-[0_0_25px_rgba(34,197,94,0.2)]' };
@@ -75,30 +91,42 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
       .map((key) => ({ name: key, value: counts[key] }));
   };
 
-  const getFixSnippet = (vuln: Vulnerability) => {
-    const typeUpper = (vuln.type || vuln.vulnerability_type || '').toUpperCase();
+  // Safe Extract Code Snippets
+  const getFixSnippet = (vuln: Vulnerability & Record<string, any>) => {
+    let badSnippet =
+      vuln.line_content ||
+      vuln.raw_code ||
+      vuln.vulnerable_code ||
+      vuln.code_snippet ||
+      vuln.code ||
+      vuln.snippet;
 
-    if (typeUpper.includes('HARDCODED_SECRET') || typeUpper.includes('SECRET')) {
-      return {
-        bad: `// ❌ Vulnerable Hardcoded Credentials (Line ${vuln.line_number || 1})\nAWS_SECRET_KEY = "123456_secret"`,
-        good: `// ✅ Use Environment Variables\nimport os\nAWS_SECRET_KEY = os.environ.get('AWS_SECRET_KEY')`
-      };
-    } else if (typeUpper.includes('COMMAND_INJECTION')) {
-      return {
-        bad: `// ❌ Vulnerable System Execution (Line ${vuln.line_number || 1})\nos.system(user_input)`,
-        good: `// ✅ Sanitized Execution:\nimport subprocess\nsubprocess.run([cmd, arg], check=True)`
-      };
-    } else if (typeUpper.includes('SQL_INJECTION')) {
-      return {
-        bad: `// ❌ Vulnerable Raw Query (Line ${vuln.line_number || 1})\nquery = f"SELECT * FROM users WHERE id = {user_input}"`,
-        good: `// ✅ Parameterized Query:\ncursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))`
-      };
+    if (badSnippet) {
+      badSnippet = String(badSnippet)
+        .replace(/^bad:\s*['"`]?/, '')
+        .replace(/['"`],?$/, '')
+        .replace(/\\n/g, '\n')
+        .replace(/\/\/\s*❌.*?\n/g, '')
+        .replace(/\$\{vuln\.line_number\s*\|\|\s*1\}/g, String(vuln.line_number || 1));
+    } else {
+      badSnippet = `No vulnerable code pattern provided for line ${vuln.line_number || 1}`;
     }
 
-    return {
-      bad: `// ❌ Insecure Code Pattern (Line ${vuln.line_number || 1})`,
-      good: `// ✅ Apply Security Sanitization`
-    };
+    let goodSnippet =
+      vuln.secure_code ||
+      vuln.fixed_code ||
+      vuln.fix_code ||
+      vuln.refactored_code ||
+      vuln.patch ||
+      vuln.recommendation_code;
+
+    if (goodSnippet) {
+      goodSnippet = String(goodSnippet).replace(/\\n/g, '\n');
+    } else {
+      goodSnippet = `// Recommendation:\n${vuln.suggestion || 'Sanitize user inputs.'}`;
+    }
+
+    return { bad: badSnippet, good: goodSnippet };
   };
 
   const handleCopyFix = (text: string, index: number) => {
@@ -132,35 +160,42 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
     link.remove();
   };
 
-  const handleAskAICoach = async (vuln: Vulnerability) => {
-    setSelectedVulnForAi(vuln);
+  const handleAskAICoach = async (vuln: Vulnerability & Record<string, any>) => {
     setAiModalOpen(true);
     setAiLoading(true);
     setAiResponse(null);
     setActiveModalTab('risk');
 
+    const snippet = vuln.line_content || vuln.vulnerable_code || vuln.code_snippet || vuln.code || vuln.file_path || 'Snippet';
+
     try {
-      const res = await axios.post('http://localhost:8000/api/ai-coach', {
+      const res = await axios.post('http://127.0.0.1:8000/api/ai-coach', {
         vulnerability_type: vuln.type || vuln.vulnerability_type,
         suggestion: vuln.suggestion,
-        vulnerable_code: vuln.file_path || 'Snippet'
+        vulnerable_code: snippet
       });
       setAiResponse(res.data);
     } catch (err) {
+      console.error("AI Coach API Request Error:", err);
       setAiResponse({
-        why_dangerous: `${vuln.type || 'Vulnerability'} ကြောင့် Unsanitized Input သို့မဟုတ် Hardcoded Credential များ အသုံးပြုထားသည့်အတွက် Remote Attacker များက Web App ကို Remote Control ရယူနိုင်ပါသည်။`,
-        hacking_scenario: `Attacker များသည် Scripted Exploit Multi-Payload များကို သုံး၍ Application Database Control ရယူခြင်း၊ /etc/passwd သို့မဟုတ် .env ထဲမှ API Keys များကို အလွယ်တကူ Reverse Extract ပြုလုပ်သွားနိုင်ပါသည်။`,
-        recommendation: `Parameter Binding (Prepared Statement), Input Escape Functions များအပြင် System Executables များကို Server Environment Context ထဲသို့ ပြောင်းရွှေ့ သုံးစွဲပေးပါ။`
+        cvss_score: 8.5,
+        cvss_severity: 'HIGH',
+        mitre_id: 'T1552',
+        mitre_name: 'Unsecured Credentials',
+        why_dangerous: '⚠️ Backend API Server သို့ မချိတ်ဆက်နိုင်ပါ။ (localhost:8000 နှင့် GROQ_API_KEY စစ်ဆေးပါ)',
+        risk_analysis: 'AI Engine တုံ့ပြန်မှု မရရှိပါသဖြင့် Local Fallback Data ကို ပြသထားပါသည်။',
+        verification_step: '# Unable to fetch verification command',
+        recommendation: '// Error: Please verify backend service availability.'
       });
-    } finally {
-      setAiLoading(false);
-    }
+   } finally {
+  setAiLoading(false);
+}
   };
 
-  const handleCopyPayload = (payloadText: string) => {
-    navigator.clipboard.writeText(payloadText);
-    setPayloadCopied(true);
-    setTimeout(() => setPayloadCopied(false), 2000);
+  const handleCopyVerify = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setVerifyCopied(true);
+    setTimeout(() => setVerifyCopied(false), 2000);
   };
 
   const handleCopyModalFix = (fixText: string) => {
@@ -177,6 +212,7 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
 
   return (
     <div className="space-y-6">
+      {/* Top Bar */}
       <div className="flex items-center justify-between">
         <button
           onClick={() => setActiveTab('git')}
@@ -205,6 +241,7 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
         </div>
       </div>
 
+      {/* Main Audit View */}
       <div className={`border rounded-2xl p-8 shadow-2xl backdrop-blur-2xl transition-all space-y-8 ${
         themeMode === 'matrix' ? 'bg-zinc-950/90 border-emerald-900/80 shadow-[0_0_30px_rgba(16,185,129,0.1)]' : 'bg-slate-900/60 border-slate-800/90 shadow-2xl'
       }`}>
@@ -217,11 +254,12 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
               </h2>
             </div>
             <p className="text-xs text-slate-400 font-mono">
-              Static Code Security Analysis Report • <span className="text-cyan-400 font-semibold">{scanResult.total_issues} Vulnerabilities Found</span>
+              Static Code Security Analysis Report • <span className="text-cyan-400 font-semibold">{scanResult.total_issues} Findings</span>
             </p>
           </div>
         </div>
 
+        {/* Security Health Score & Breakdown */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className={`lg:col-span-7 p-6 rounded-2xl border backdrop-blur-xl flex flex-col justify-between transition-all ${health.color}`}>
             <div className="flex items-center justify-between">
@@ -246,7 +284,7 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
               </div>
               <div className="w-full bg-slate-950/80 rounded-full h-3 overflow-hidden border border-slate-800">
                 <div
-                  className="h-full transition-all duration-700 rounded-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.5)]"
+                  className="h-full transition-all duration-700 rounded-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400"
                   style={{ width: `${health.score}%` }}
                 />
               </div>
@@ -297,6 +335,16 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
           </div>
         </div>
 
+        {/* 📊 Risk Projection Trigger Button */}
+        <button
+          onClick={() => setIsRiskModalOpen(true)}
+          className="flex items-center space-x-2 bg-gradient-to-r from-rose-600/20 to-amber-600/20 hover:from-rose-600/30 hover:to-amber-600/30 border border-rose-500/40 text-rose-300 font-bold px-4 py-2.5 rounded-xl transition-all shadow-lg text-xs"
+        >
+          <TrendingDown size={16} className="text-rose-400" />
+          <span>View 30-Day Risk & Impact Projection</span>
+        </button>
+
+        {/* Filter & Search Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-[#070a12] p-3 rounded-2xl border border-slate-800/80 shadow-inner">
           <div className="flex items-center space-x-2.5 bg-slate-900 border border-slate-800 px-3.5 py-2 rounded-xl text-xs flex-1">
             <Search size={15} className="text-slate-500" />
@@ -326,12 +374,11 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
           </div>
         </div>
 
+        {/* Findings List */}
         <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-extrabold uppercase tracking-widest text-slate-400 font-mono">
-              Detailed Audit Findings ({filteredVulnerabilities.length})
-            </h3>
-          </div>
+          <h3 className="text-xs font-extrabold uppercase tracking-widest text-slate-400 font-mono">
+            Detailed Audit Findings ({filteredVulnerabilities.length})
+          </h3>
 
           {filteredVulnerabilities.length === 0 ? (
             <div className="py-12 text-center text-slate-500 text-xs font-mono bg-slate-950/40 rounded-2xl border border-slate-800/50">
@@ -354,12 +401,10 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
                     <span className={`text-[10px] font-mono font-extrabold px-3 py-1 rounded-full border shadow-sm ${
                       (vuln.severity || 'HIGH').toUpperCase() === 'CRITICAL'
-                        ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 shadow-rose-950'
-                        : (vuln.severity || 'HIGH').toUpperCase() === 'HIGH'
-                        ? 'bg-orange-500/10 border-orange-500/40 text-orange-400 shadow-orange-950'
-                        : 'bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-amber-950'
+                        ? 'bg-rose-500/10 border-rose-500/40 text-rose-400'
+                        : 'bg-orange-500/10 border-orange-500/40 text-orange-400'
                     }`}>
-                      {vuln.severity || 'HIGH'} SEVERITY
+                      {(vuln.severity || 'HIGH').toUpperCase()} SEVERITY
                     </span>
 
                     <span className="text-xs font-mono text-cyan-400/90 bg-cyan-950/30 border border-cyan-800/40 px-3 py-1 rounded-lg">
@@ -378,12 +423,13 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
                     </p>
                   </div>
 
+                  {/* Code Pattern Boxes */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs font-mono pt-2">
                     <div className="bg-rose-950/20 border border-rose-500/25 rounded-xl p-4 text-rose-300 space-y-2">
                       <p className="text-[10px] text-rose-400 font-bold tracking-wider flex items-center space-x-1 border-b border-rose-500/20 pb-1.5">
-                        <X size={14} /><span>VULNERABLE PATTERN</span>
+                        <X size={14} /><span>VULNERABLE PATTERN (Line {vuln.line_number || 1})</span>
                       </p>
-                      <pre className="whitespace-pre-wrap leading-relaxed overflow-x-auto text-[11px]">{fix.bad}</pre>
+                      <pre className="whitespace-pre-wrap leading-relaxed overflow-x-auto text-[11px] font-mono text-rose-200">{fix.bad}</pre>
                     </div>
 
                     <div className="bg-emerald-950/20 border border-emerald-500/25 rounded-xl p-4 text-emerald-300 space-y-2">
@@ -400,7 +446,7 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
                           <span>{copiedIndex === index ? 'Copied Fix!' : 'Copy Snippet'}</span>
                         </button>
                       </div>
-                      <pre className="whitespace-pre-wrap leading-relaxed overflow-x-auto text-[11px]">{fix.good}</pre>
+                      <pre className="whitespace-pre-wrap leading-relaxed overflow-x-auto text-[11px] font-mono text-emerald-300">{fix.good}</pre>
                     </div>
                   </div>
 
@@ -409,205 +455,237 @@ export default function ScanResultView({ themeMode, scanResult, setActiveTab }: 
                     className="w-full mt-2 bg-gradient-to-r from-indigo-900/40 via-purple-900/40 to-cyan-900/40 hover:from-indigo-800/60 hover:to-cyan-800/60 border border-indigo-500/40 text-slate-100 text-xs font-bold py-3 px-4 rounded-xl flex items-center justify-center space-x-2.5 transition-all shadow-md group"
                   >
                     <Bot size={18} className="text-cyan-400 group-hover:scale-110 transition-transform" />
-                    <span>Ask AI Security Coach for Exploit Analysis</span>
+                    <span>Ask AI Security Coach for Groq Llama-3 Analysis</span>
                     <Sparkles size={15} className="text-amber-400 animate-pulse" />
                   </button>
                 </div>
               );
             })
           )}
+
+          {/* Risk Projection Modal */}
+          <RiskProjectionModal
+            isOpen={isRiskModalOpen}
+            onClose={() => setIsRiskModalOpen(false)}
+            vulnerabilities={scanResult?.vulnerabilities || []}
+          />
         </div>
       </div>
 
+      {/* Cyber/Sci-Fi AI Intelligence Modal */}
       {aiModalOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-2xl flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="absolute w-[600px] h-[350px] bg-gradient-to-r from-purple-600/30 via-cyan-500/20 to-rose-600/20 blur-[140px] pointer-events-none rounded-full" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md transition-all duration-300">
+          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl bg-slate-950/90 border border-cyan-500/40 shadow-[0_0_25px_rgba(6,182,212,0.15)] flex flex-col font-sans text-slate-200">
 
-          <div className="bg-[#070a13] border border-cyan-500/40 rounded-3xl max-w-3xl w-full p-6 space-y-6 shadow-[0_0_80px_rgba(34,211,238,0.2)] relative overflow-hidden font-sans">
-            <div className="flex items-center justify-between border-b border-slate-800/90 pb-4">
-              <div className="flex items-center space-x-3.5">
-                <div className="relative">
-                  <div className="absolute -inset-1 bg-gradient-to-r from-rose-500 via-purple-600 to-cyan-500 rounded-2xl blur-sm opacity-80 animate-pulse" />
-                  <div className="relative p-3 bg-slate-950 border border-cyan-400/50 rounded-2xl text-cyan-400">
-                    <Bot size={26} />
-                  </div>
+            {/* 1. Neon Cyber Glow Backgrounds */}
+            <div className="absolute -top-24 -left-24 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            {/* 2. Header Section: Sci-Fi HUD */}
+            <div className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-cyan-500/30 bg-slate-900/60 backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                  <Cpu className="w-6 h-6 animate-pulse" />
                 </div>
-
                 <div>
-                  <div className="flex items-center space-x-2">
-                    <h3 className="font-black text-white text-lg tracking-wide">
-                      AI Cyber Exploit Intelligence
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-mono text-lg font-bold tracking-wider text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">
+                      AI SECURITY COACH (GROQ LLAMA-3.3)
                     </h3>
-                    <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[10px] font-mono font-bold flex items-center space-x-1">
-                      <Sparkles size={11} className="text-amber-400 animate-spin" />
-                      <span>NEURAL ENGINE v4.2</span>
+                    <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      ● AI ONLINE & ANALYZING
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Threat Vector Analysis • MITRE ATT&CK Mapping
-                  </p>
+                  <p className="text-xs font-mono text-slate-400">REAL-TIME THREAT MITIGATION ENGINE</p>
                 </div>
               </div>
 
               <button
                 onClick={() => setAiModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900/60 border border-slate-800 hover:bg-slate-800 transition shadow-inner"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
               >
-                <X size={18} />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {aiLoading ? (
-              <div className="py-20 text-center space-y-4">
-                <div className="relative w-20 h-20 mx-auto">
-                  <div className="absolute inset-0 rounded-full border-4 border-cyan-500/20 border-t-cyan-400 animate-spin" />
-                  <div className="absolute inset-2 rounded-full border-4 border-purple-500/20 border-t-purple-400 animate-spin [animation-duration:1.5s]" />
-                  <Bot size={32} className="absolute inset-0 m-auto text-cyan-400 animate-pulse" />
+            {/* Modal Body */}
+            <div className="relative z-10 flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              {aiLoading ? (
+                <div className="py-20 text-center space-y-4">
+                  <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-400 rounded-full animate-spin mx-auto" />
+                  <p className="text-sm font-bold text-white font-mono">Analyzing Security Pattern with Groq LPU...</p>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-bold text-white font-mono tracking-wide">Synthesizing Cyber Attack Vectors...</p>
-                  <p className="text-xs text-cyan-400/80 font-mono">AST Security Tree & Vulnerability Hashes များကို AI Neural Engine မှ စစ်ဆေးနေပါသည်</p>
-                </div>
-              </div>
-            ) : aiResponse && (
-              <div className="space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="bg-rose-950/30 border border-rose-500/30 p-3 rounded-2xl flex items-center space-x-3">
-                    <div className="w-12 h-12 rounded-full border-4 border-rose-500 flex items-center justify-center font-black text-rose-400 text-xs shadow-[0_0_15px_rgba(244,63,94,0.4)] font-mono">
-                      9.8
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-rose-400 font-bold uppercase font-mono">CVSS v3.1 SCORE</p>
-                      <p className="text-xs font-black text-white">CRITICAL RISK</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-purple-950/30 border border-purple-500/30 p-3 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] text-purple-400 font-bold uppercase font-mono">MITRE ATT&CK</p>
-                      <p className="text-xs font-black text-purple-300">T1059 • Command Exec</p>
-                    </div>
-                    <Terminal size={22} className="text-purple-400" />
-                  </div>
-
-                  <div className="bg-emerald-950/30 border border-emerald-500/30 p-3 rounded-2xl flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] text-emerald-400 font-bold uppercase font-mono">Remediation Status</p>
-                      <p className="text-xs font-black text-emerald-300">Manual Patch Ready</p>
-                    </div>
-                    <ShieldCheck size={22} className="text-emerald-400" />
-                  </div>
-                </div>
-
-                <div className="flex border-b border-slate-800 space-x-2 font-mono text-xs">
-                  <button
-                    onClick={() => setActiveModalTab('risk')}
-                    className={`pb-2.5 px-3 flex items-center space-x-2 font-bold transition border-b-2 ${
-                      activeModalTab === 'risk'
-                        ? 'border-rose-500 text-rose-400'
-                        : 'border-transparent text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <AlertOctagon size={14} />
-                    <span>Risk Analysis</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveModalTab('poc')}
-                    className={`pb-2.5 px-3 flex items-center space-x-2 font-bold transition border-b-2 ${
-                      activeModalTab === 'poc'
-                        ? 'border-amber-500 text-amber-400'
-                        : 'border-transparent text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Terminal size={14} />
-                    <span>PoC Attack Shell</span>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveModalTab('mitre')}
-                    className={`pb-2.5 px-3 flex items-center space-x-2 font-bold transition border-b-2 ${
-                      activeModalTab === 'mitre'
-                        ? 'border-purple-500 text-purple-400'
-                        : 'border-transparent text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Activity size={14} />
-                    <span>MITRE ATT&CK</span>
-                  </button>
-                </div>
-
-                {activeModalTab === 'risk' && (
-                  <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 space-y-2">
-                    <p className="text-xs text-rose-400 font-bold uppercase tracking-wider font-mono">
-                      ⚠️ အန္တရာယ် ရှိပုံနှင့် သက်ရောက်မှု (Impact Assessment)
-                    </p>
-                    <p className="text-xs text-slate-300 leading-relaxed bg-black/50 p-3.5 rounded-xl border border-slate-800">
-                      {aiResponse.why_dangerous}
-                    </p>
-                  </div>
-                )}
-
-                {activeModalTab === 'poc' && (
-                  <div className="bg-slate-950/80 border border-amber-500/30 rounded-2xl p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-amber-400 font-bold uppercase tracking-wider font-mono">
-                        🧪 Hacker များ စမ်းသပ် တိုက်ခိုက်နိုင်သည့် ပုံစံ (Proof of Concept)
-                      </p>
-                      <button
-                        onClick={() => handleCopyPayload('curl -X POST https://target-app.com/api -d "cmd=cat /etc/passwd"')}
-                        className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition font-mono"
-                      >
-                        {payloadCopied ? <Check size={12} /> : <Copy size={12} />}
-                        <span>{payloadCopied ? 'Copied Payload!' : 'Copy Shell Payload'}</span>
-                      </button>
-                    </div>
-
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      {aiResponse.hacking_scenario}
-                    </p>
-
-                    <div className="bg-black border border-slate-800 rounded-xl p-3 font-mono text-[11px] space-y-2 shadow-inner">
-                      <div className="flex items-center justify-between text-slate-500 border-b border-slate-800 pb-1.5 text-[10px]">
-                        <span className="text-slate-400">bash — exploit_poc.sh</span>
-                        <span className="text-rose-400 font-bold">POC PAYLOAD READY</span>
+              ) : aiResponse && (
+                <>
+                  {/* Dynamic Top Stats */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-rose-950/30 border border-rose-500/30 p-3 rounded-2xl flex items-center space-x-3">
+                      <div className="w-12 h-12 rounded-full border-4 border-rose-500 flex items-center justify-center font-black text-rose-400 text-xs font-mono">
+                        {aiResponse.cvss_score ?? 8.5}
                       </div>
-                      <p className="text-rose-400 font-bold">$ curl -X POST https://target-app.com/api -d "cmd=cat /etc/passwd"</p>
+                      <div>
+                        <p className="text-[10px] text-rose-400 font-bold uppercase font-mono">CVSS SCORE</p>
+                        <p className="text-xs font-black text-white">{aiResponse.cvss_severity ?? 'HIGH'}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-purple-950/30 border border-purple-500/30 p-3 rounded-2xl flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-purple-400 font-bold uppercase font-mono">MITRE ATTACK</p>
+                        <p className="text-xs font-black text-purple-300">{aiResponse.mitre_id ?? 'T1552'} • {aiResponse.mitre_name ?? 'Credentials'}</p>
+                      </div>
+                      <Terminal size={22} className="text-purple-400" />
+                    </div>
+
+                    <div className="bg-emerald-950/30 border border-emerald-500/30 p-3 rounded-2xl flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-emerald-400 font-bold uppercase font-mono">Status</p>
+                        <p className="text-xs font-black text-emerald-300">Patch Ready</p>
+                      </div>
+                      <ShieldCheck size={22} className="text-emerald-400" />
                     </div>
                   </div>
-                )}
 
-                {activeModalTab === 'mitre' && (
-                  <div className="bg-slate-950/85 border border-purple-500/30 rounded-2xl p-4 space-y-3">
-                    <p className="text-xs text-purple-400 font-bold uppercase tracking-wider font-mono">
-                      🛡️ MITRE ATT&CK Framework Mapping
-                    </p>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      အဆိုပါ Vulnerability သည် MITRE ATT&CK T1059 (Command and Scripting Interpreter) နည်းလမ်းအောက်တွင် တိုက်ရိုက်သက်ဆိုင်နေပြီး Application ၏ Execution Flow ကို အလွယ်တကူ ကျော်လွန် (Bypass) လုပ်နိုင်စွမ်းရှိသည်။
-                    </p>
-                  </div>
-                )}
-
-                <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
-                    <p className="text-xs text-emerald-400 font-bold uppercase tracking-wider flex items-center space-x-1 font-mono">
-                      <Check size={14} /><span>AI SECURE REFACTORING CODE</span>
-                    </p>
+                  {/* Tabs */}
+                  <div className="flex border-b border-cyan-500/20 space-x-2 font-mono text-xs">
                     <button
-                      onClick={() => handleCopyModalFix(aiResponse.recommendation)}
-                      className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/40 text-emerald-200 px-2.5 py-1 rounded-lg flex items-center space-x-1 transition font-mono"
+                      onClick={() => setActiveModalTab('risk')}
+                      className={`pb-2.5 px-3 flex items-center space-x-2 font-bold transition border-b-2 ${
+                        activeModalTab === 'risk' ? 'border-rose-500 text-rose-400' : 'border-transparent text-slate-400'
+                      }`}
                     >
-                      {fixSnippetCopied ? <Check size={12} /> : <Copy size={12} />}
-                      <span>{fixSnippetCopied ? 'Copied AI Fix!' : 'Copy Fix Snippet'}</span>
+                      <AlertOctagon size={14} />
+                      <span>Risk Analysis</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveModalTab('verify')}
+                      className={`pb-2.5 px-3 flex items-center space-x-2 font-bold transition border-b-2 ${
+                        activeModalTab === 'verify' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-400'
+                      }`}
+                    >
+                      <Terminal size={14} />
+                      <span>Verification</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveModalTab('mitre')}
+                      className={`pb-2.5 px-3 flex items-center space-x-2 font-bold transition border-b-2 ${
+                        activeModalTab === 'mitre' ? 'border-purple-500 text-purple-400' : 'border-transparent text-slate-400'
+                      }`}
+                    >
+                      <Activity size={14} />
+                      <span>MITRE ATT&CK</span>
                     </button>
                   </div>
-                  <pre className="bg-black/60 border border-slate-800 rounded-xl p-3 text-[11px] font-mono text-emerald-300 whitespace-pre-wrap overflow-x-auto leading-relaxed">
-                    {aiResponse.recommendation}
-                  </pre>
-                </div>
 
-              </div>
-            )}
+                  {/* 3. Impact Assessment Section: Cyber Alert / Terminal Output */}
+                  {activeModalTab === 'risk' && (
+                    <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-4 font-mono text-sm relative overflow-hidden">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
+                      <div className="flex items-center justify-between mb-2 text-rose-400 font-bold border-b border-rose-500/20 pb-2">
+                        <span className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 animate-bounce" />
+                          $&gt; SECURITY BREACH THREAT ALERT
+                        </span>
+                        <span className="text-xs bg-rose-500/20 px-2 py-0.5 rounded text-rose-300">CRITICAL</span>
+                      </div>
+                      <p className="text-slate-300 leading-relaxed font-sans mt-2">
+                        {aiResponse.why_dangerous}
+                      </p>
+                      {aiResponse.risk_analysis && (
+                        <p className="text-xs text-slate-400 leading-relaxed pt-2 font-mono border-t border-rose-500/10 mt-2">
+                          {aiResponse.risk_analysis}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tab 2: Verification Command */}
+                  {activeModalTab === 'verify' && (
+                    <div className="bg-slate-950/80 border border-amber-500/30 rounded-2xl p-4 space-y-3 font-mono">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-amber-400 font-bold uppercase">🧪 Local Verification & Audit Command</p>
+                        {aiResponse.verification_step && (
+                          <button
+                            onClick={() => handleCopyVerify(aiResponse.verification_step!)}
+                            className="text-[10px] bg-amber-500/20 border border-amber-500/40 text-amber-200 px-2.5 py-1 rounded-lg flex items-center space-x-1 font-mono"
+                          >
+                            {verifyCopied ? <Check size={12} /> : <Copy size={12} />}
+                            <span>{verifyCopied ? 'Copied Command!' : 'Copy Command'}</span>
+                          </button>
+                        )}
+                      </div>
+                      {aiResponse.verification_step && (
+                        <pre className="bg-black border border-slate-800 rounded-xl p-3 text-[11px] text-amber-300 overflow-x-auto">
+                          $ {aiResponse.verification_step}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tab 3: MITRE Mapping */}
+                  {activeModalTab === 'mitre' && (
+                    <div className="bg-slate-950/85 border border-purple-500/30 rounded-2xl p-4 space-y-2 font-mono text-xs text-slate-300">
+                      <p className="text-purple-400 font-bold">🛡️ MITRE ATT&CK Framework Context</p>
+                      <p>Technique ID: <span className="text-purple-300 font-bold">{aiResponse.mitre_id ?? 'T1552'}</span></p>
+                      <p>Name: <span className="text-slate-100">{aiResponse.mitre_name ?? 'Unsecured Credentials'}</span></p>
+                    </div>
+                  )}
+
+                  {/* 4. Code Refactoring Editor: Real Code Editor & Diff View */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                      <span className="text-cyan-400 font-semibold">&gt; SUGGESTED REFACTORING (DIFF VIEW)</span>
+                      <span>LANGUAGE: PYTHON / SECURE CODE</span>
+                    </div>
+
+                    <div className="rounded-xl border border-cyan-500/30 bg-slate-950 overflow-hidden shadow-2xl font-mono text-xs">
+                      {/* Editor File Name Header Bar */}
+                      <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-800 text-slate-400">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1.5">
+                            <div className="w-3 h-3 rounded-full bg-rose-500/80" />
+                            <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                            <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
+                          </div>
+                          <span className="ml-2 text-slate-300 font-medium">secure_refactor.py</span>
+                          <span className="text-[10px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded">Diff Mode</span>
+                        </div>
+                        <button
+                          onClick={() => handleCopyModalFix(aiResponse.recommendation)}
+                          className="flex items-center gap-1 hover:text-cyan-400 transition-colors"
+                        >
+                          {fixSnippetCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{fixSnippetCopied ? 'Copied!' : 'Copy Code'}</span>
+                        </button>
+                      </div>
+
+                      {/* Code Content Container */}
+                      <div className="p-4 overflow-x-auto leading-relaxed">
+                        <div className="bg-emerald-500/10 -mx-4 px-4 py-2 text-emerald-400 border-l-2 border-emerald-500">
+                          <pre className="whitespace-pre-wrap text-[11px] font-mono text-emerald-300">
+                            {aiResponse.recommendation}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="relative z-10 flex items-center justify-end px-6 py-3 border-t border-cyan-500/20 bg-slate-900/40">
+              <button
+                onClick={() => setAiModalOpen(false)}
+                className="px-4 py-2 text-xs font-mono font-semibold rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all shadow-[0_0_10px_rgba(6,182,212,0.2)]"
+              >
+                CLOSE TERMINAL
+              </button>
+            </div>
+
           </div>
         </div>
       )}

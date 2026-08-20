@@ -5,8 +5,15 @@ export interface Vulnerability {
   line_number?: number;
   suggestion?: string;
   file_path?: string;
-}
 
+  vulnerable_code?: string;
+  secure_code?: string;
+  raw_code?: string;
+  line_content?: string;
+  fixed_code?: string;
+  fix_code?: string;
+  patch?: string;
+}
 export interface ScanResult {
   scan_id?: string | null;
   repo_name: string;

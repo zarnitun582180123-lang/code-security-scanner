@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "groq-sdk": "^1.5.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
+    "recharts": "^3.10.1"
+  }
+}
