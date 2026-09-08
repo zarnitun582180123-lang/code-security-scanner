@@ -23,7 +23,7 @@ from app.models import Repository, Scan, Vulnerability, AIChatMessage
 from app.celery_app import celery_app
 
 from app.routes.scan import router as scan_router
-
+from app.routes.ml import router as ml_router
 from app.scanner.url_engine import extract_url_features
 
 from metrics_engine import evaluate_model_metrics
@@ -73,7 +73,7 @@ app.add_middleware(
 # /scan/git
 # /scan/snippet
 app.include_router(scan_router)
-
+app.include_router(ml_router)
 
 # ============================================================
 # GROQ AI CONFIGURATION

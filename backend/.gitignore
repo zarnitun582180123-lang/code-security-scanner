@@ -1,9 +1,21 @@
+# Dataset
+dataset/train.parquet
+
+# Environment
 .env
-__pycache__/
-*.pyc
 venv/
 .venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Database
 *.db
 sql_app.db
 app.db
 scan_results.db
+
+# Node.js
+node_modules/
+.next/

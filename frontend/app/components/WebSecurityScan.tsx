@@ -24,9 +24,15 @@ interface WebSecurityScanProps {
   scanResult?: any;
   loading?: boolean;
   onScan?: (url: string) => void;
+  themeMode?: 'default' | 'matrix';
 }
 
-export default function WebSecurityScan({ scanResult: initialResult, loading: externalLoading, onScan }: WebSecurityScanProps) {
+export default function WebSecurityScan({
+  scanResult: initialResult,
+  loading: externalLoading,
+  onScan,
+  themeMode,
+}: WebSecurityScanProps) {
   const [url, setUrl] = useState('');
   const [internalLoading, setInternalLoading] = useState(false);
   const [scanResult, setScanResult] = useState<any>(initialResult || null);

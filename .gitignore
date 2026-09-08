@@ -1,0 +1,5 @@
+dataset/train.parquet
+node_modules/
+.next/
+__pycache__/
+.env

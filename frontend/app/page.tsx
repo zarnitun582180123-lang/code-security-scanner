@@ -1,5 +1,6 @@
 'use client';
 
+import CyberLaw from './components/CyberLaw';
 import ThreatAnalysisIntro from "./components/ThreatAnalysisIntro";
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -36,8 +37,8 @@ import WebSecurityScan from './components/WebSecurityScan';
 
 export default function Home() {
     const [showIntro, setShowIntro] = useState(true);
- const [activeTab, setActiveTab] = useState<
-  'git' | 'code' | 'history' | 'result' | 'metrics' | 'url' | 'web-scan' | 'ai-agent'
+const [activeTab, setActiveTab] = useState<
+  'git' | 'code' | 'history' | 'result' | 'metrics' | 'url' | 'web-scan' | 'ai-agent' | 'cyber-law'
 >('git');
   const [themeMode, setThemeMode] = useState<'default' | 'matrix'>('default');
 
@@ -116,12 +117,13 @@ export default function Home() {
     console.log('🔥 4. BACKEND RESPONSE:', response.data);
 console.log('🔥 4. VULNERABILITIES:', response.data.vulnerabilities);
 
-    const resultObj: ScanResult = {
-      scan_id: response.data.scan_id,
-      repo_name: 'Direct Code Snippet Audit',
-      total_issues: response.data.total_issues,
-      vulnerabilities: response.data.vulnerabilities
-    };
+  const resultObj: ScanResult = {
+  scan_id: response.data.scan_id,
+  repo_name: 'Direct Code Snippet Audit',
+  total_issues: response.data.total_issues,
+  vulnerabilities: response.data.vulnerabilities,
+  ml_prediction: response.data.ml_prediction
+};
 
     console.log('🔥 5. RESULT OBJECT:', resultObj);
 
@@ -309,6 +311,24 @@ console.log('🔥 4. VULNERABILITIES:', response.data.vulnerabilities);
   <Bot size={15} />
   <span>AI Agent</span>
 </button>
+<button
+  onClick={() => {
+    setActiveTab('cyber-law');
+    setError('');
+  }}
+  className={`px-3 py-2 rounded-lg font-bold text-xs flex items-center space-x-2 transition-all duration-300 ${
+    activeTab === 'cyber-law'
+      ? themeMode === 'matrix'
+        ? 'bg-emerald-500 text-black font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+        : 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-500/20'
+      : themeMode === 'matrix'
+        ? 'text-emerald-600 hover:text-emerald-300 hover:bg-emerald-950/60'
+        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+  }`}
+>
+  <Shield size={15} />
+  <span>Cyber Laws</span>
+</button>
 
             {/* 🟢 Metrics & Benchmarks Tab Button */}
             <button
@@ -382,6 +402,9 @@ console.log('🔥 4. VULNERABILITIES:', response.data.vulnerabilities);
       themeMode={themeMode}
       scanResult={scanResult}
     />
+    ) : activeTab === 'cyber-law' ? (
+
+  <CyberLaw />
 
   ) : activeTab !== 'result' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">

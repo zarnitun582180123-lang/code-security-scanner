@@ -11,46 +11,85 @@ interface AiCoachProps {
   };
 }
 
+interface ChatMessage {
+  role: 'assistant' | 'user';
+  content: string;
+}
+
 export const AiCoachChat: React.FC<AiCoachProps> = ({ vulnerability }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState([
+
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: `မင်္ဂလာပါ။ **${vulnerability.title}** (${vulnerability.filePath}) အတွက် Secure Fix Code သို့မဟုတ် သိချင်တာများကို မေးမြန်းနိုင်ပါသည်။`
-    }
+      content: `မင်္ဂလာပါ။ **${vulnerability.title}** (${vulnerability.filePath}) အတွက် Secure Fix Code သို့မဟုတ် သိချင်တာများကို မေးမြန်းနိုင်ပါသည်။`,
+    },
   ]);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    const userMsg = { role: 'user', content: input };
+    const userMsg: ChatMessage = {
+      role: 'user',
+      content: input,
+    };
+
     const updatedMessages = [...messages, userMsg];
+
     setMessages(updatedMessages);
     setInput('');
     setLoading(true);
 
     try {
-      // Backend သို့ Context + User Input ပေးပို့ခြင်း
-     const res = await fetch('http://127.0.0.1:8000/api/ai-coach', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    vulnerability_type: issue.title,
-    suggestion: input, // သင်ရိုက်လိုက်သော Hi သို့မဟုတ် မေးခွန်း
-    vulnerable_code: issue.snippet
-  }),
-});
+      // Backend သို့ vulnerability context + user question ပေးပို့ခြင်း
+      const res = await fetch('http://127.0.0.1:8000/api/ai-coach', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          vulnerability_type: vulnerability.title,
+          suggestion: input,
+          vulnerable_code: vulnerability.snippet,
+        }),
+      });
 
-      const data = await response.json();
+      if (!res.ok) {
+        throw new Error(`AI Coach request failed: ${res.status}`);
+      }
+
+      const data = await res.json();
+
       if (data.success) {
-        setMessages([...updatedMessages, { role: 'assistant', content: data.reply }]);
+        setMessages([
+          ...updatedMessages,
+          {
+            role: 'assistant',
+            content: data.reply,
+          },
+        ]);
+      } else {
+        setMessages([
+          ...updatedMessages,
+          {
+            role: 'assistant',
+            content: data.reply || 'AI Coach မှ response မရရှိပါ။',
+          },
+        ]);
       }
     } catch (err) {
-      console.error(err);
+      console.error('AI Coach Error:', err);
+
+      setMessages([
+        ...updatedMessages,
+        {
+          role: 'assistant',
+          content:
+            'AI Coach server နှင့် ချိတ်ဆက်၍မရပါ။ Backend server running ဖြစ်/မဖြစ် စစ်ဆေးပေးပါ။',
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -69,8 +108,16 @@ export const AiCoachChat: React.FC<AiCoachProps> = ({ vulnerability }) => {
         <div className="fixed bottom-4 right-4 w-[380px] h-[480px] bg-slate-900 border border-cyan-500/50 rounded-xl shadow-2xl flex flex-col z-50 overflow-hidden">
           {/* Header */}
           <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
-            <span className="font-bold text-cyan-400 text-xs">ISVS Threat Advisor (Groq-Powered)</span>
-            <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-white text-xs">✕</button>
+            <span className="font-bold text-cyan-400 text-xs">
+              ISVS Threat Advisor (Groq-Powered)
+            </span>
+
+            <button
+              onClick={() => setIsOpen(false)}
+              className="text-gray-400 hover:text-white text-xs"
+            >
+              ✕
+            </button>
           </div>
 
           {/* Chat Messages */}
@@ -87,7 +134,12 @@ export const AiCoachChat: React.FC<AiCoachProps> = ({ vulnerability }) => {
                 <div className="whitespace-pre-wrap">{m.content}</div>
               </div>
             ))}
-            {loading && <div className="text-gray-400 text-xs italic">AI Coach is thinking...</div>}
+
+            {loading && (
+              <div className="text-gray-400 text-xs italic">
+                AI Coach is thinking...
+              </div>
+            )}
           </div>
 
           {/* Input Box */}
@@ -98,8 +150,13 @@ export const AiCoachChat: React.FC<AiCoachProps> = ({ vulnerability }) => {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ex: Express မှာ Prepared Statement ဘယ်လိုပြင်မလဲ?"
               className="flex-1 bg-slate-900 border border-slate-700 text-white text-xs rounded px-2.5 py-1.5 focus:outline-none focus:border-cyan-500"
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSend();
+                }
+              }}
             />
+
             <button
               onClick={handleSend}
               disabled={loading}

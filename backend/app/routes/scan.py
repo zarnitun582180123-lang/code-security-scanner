@@ -10,7 +10,7 @@ from app.models import Repository, Scan, Vulnerability
 from app.scanner.ast_engine import scan_code_string
 from app.services.git_service import do_git_clone_and_scan
 
-
+from app.ml.ml_detector import predict_vulnerability
 router = APIRouter(
     prefix="/scan",
     tags=["Scanning"],
@@ -165,17 +165,22 @@ async def scan_git_repository(
         "issues": issues,
     }
 
-
 @router.post("/snippet")
 def scan_code_snippet(
     payload: CodeSnippetRequest,
     db: Session = Depends(get_db),
 ):
     """
-    Scan directly submitted source code.
+    Scan directly submitted source code using:
+    1. ISVS AST / Rule-based scanner
+    2. ISVS Machine Learning SVM detector
     """
 
     try:
+        # ============================================================
+        # 1. AST / RULE-BASED SCANNER
+        # ============================================================
+
         raw_issues = scan_code_string(
             payload.code_string,
             file_path="snippet_input",
@@ -185,6 +190,34 @@ def scan_code_snippet(
             raw_issues,
             default_file_path="snippet_input",
         )
+
+        # ============================================================
+        # 2. MACHINE LEARNING SCANNER
+        # ============================================================
+
+        try:
+            ml_result = predict_vulnerability(
+                payload.code_string
+            )
+
+        except Exception as ml_error:
+            # ML failure should NOT break the existing AST scanner
+            ml_result = {
+                "prediction": "UNAVAILABLE",
+                "label": None,
+                "vulnerability": "ML analysis unavailable",
+                "cwe": "N/A",
+                "risk_level": "N/A",
+                "confidence": None,
+                "recommendation":
+                    "Machine Learning analysis could not be completed.",
+                "model": "Support Vector Machine",
+                "error": str(ml_error),
+            }
+
+        # ============================================================
+        # 3. GET / CREATE REPOSITORY
+        # ============================================================
 
         repo = (
             db.query(Repository)
@@ -204,6 +237,10 @@ def scan_code_snippet(
             db.commit()
             db.refresh(repo)
 
+        # ============================================================
+        # 4. CREATE SCAN RECORD
+        # ============================================================
+
         scan_record = Scan(
             repo_id=repo.id,
             status="COMPLETED",
@@ -214,7 +251,12 @@ def scan_code_snippet(
         db.commit()
         db.refresh(scan_record)
 
+        # ============================================================
+        # 5. SAVE AST VULNERABILITIES
+        # ============================================================
+
         for issue in formatted_issues:
+
             vuln = Vulnerability(
                 scan_id=scan_record.id,
                 severity=issue["severity"],
@@ -230,14 +272,24 @@ def scan_code_snippet(
 
         db.commit()
 
+        # ============================================================
+        # 6. COMBINED RESPONSE
+        # ============================================================
+
         return {
             "scan_id": f"SCAN-{scan_record.id}",
+
+            # AST / Rule-based results
             "total_issues": len(formatted_issues),
             "vulnerabilities": formatted_issues,
             "issues": formatted_issues,
+
+            # Machine Learning result
+            "ml_prediction": ml_result,
         }
 
     except Exception as e:
+
         db.rollback()
 
         raise HTTPException(
